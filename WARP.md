@@ -48,7 +48,9 @@ The application orchestrates a one-way sync from IMDb to Jellyseerr:
 
 ### IMDb Scraping
 *   **Anti-Bot:** Uses a standard User-Agent header.
-*   **Parsing:** Preferentially targets `<script type="application/ld+json">` for stability. Fallback uses CSS selector `ul.ipc-metadata-list li.ipc-metadata-list-summary-item a h3`.
+*   **Parsing:**
+    *   **IMDb:** Targets `<script type="application/ld+json">` or fallback CSS selector.
+    *   **MyAnimeList:** Targets `.seasonal-anime .h2_anime_title a`.
 *   **Resilience:** Errors during scraping return an empty list but do not crash the container; the scheduler will retry after the interval.
 
 ### Jellyseerr Integration

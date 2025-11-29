@@ -6,6 +6,7 @@ Orchestrates the IMDb scraping and Jellyseerr requesting process.
 import time
 from config import RUN_INTERVAL_DAYS, IMDB_URLS, logger
 from imdb_scraper import scrape_imdb_top_movies
+from mal_scraper import scrape_mal_season
 from jellyseerr_client import JellyseerrClient
 from header import display_header
 
@@ -28,7 +29,11 @@ def main():
             for idx, url in enumerate(IMDB_URLS, 1):
                 try:
                     print(f"\n[{idx}/{len(IMDB_URLS)}] Scraping URL: {url}")
-                    movies = scrape_imdb_top_movies(url)
+                    
+                    if "myanimelist.net" in url:
+                        movies = scrape_mal_season(url)
+                    else:
+                        movies = scrape_imdb_top_movies(url)
                     
                     if not movies:
                         logger.warning(f"No movies found for URL: {url}")
