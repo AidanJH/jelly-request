@@ -6,14 +6,15 @@ Handles web scraping of IMDb's most popular movies chart.
 import requests
 import json
 from bs4 import BeautifulSoup
-from config import IMDB_URL, MOVIE_LIMIT, logger
+from config import MOVIE_LIMIT, logger
 from utils import normalize_title, decode_html_entities
 
-def scrape_imdb_top_movies(limit=MOVIE_LIMIT):
+def scrape_imdb_top_movies(url, limit=MOVIE_LIMIT):
     """
     Scrape top movies from IMDb's most popular movies chart.
     
     Args:
+        url (str): IMDb list URL to scrape
         limit (int): Maximum number of movies to scrape
         
     Returns:
@@ -23,7 +24,8 @@ def scrape_imdb_top_movies(limit=MOVIE_LIMIT):
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
         }
-        response = requests.get(IMDB_URL, headers=headers, timeout=(5, 10))
+        logger.info(f"Scraping URL: {url}")
+        response = requests.get(url, headers=headers, timeout=(5, 10))
         logger.debug(f"IMDb response status: {response.status_code}")
         logger.debug(f"IMDb response snippet: {response.text[:500]}")
         print(f"IMDb response status: {response.status_code}")

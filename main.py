@@ -4,7 +4,7 @@ Orchestrates the IMDb scraping and Jellyseerr requesting process.
 """
 
 import time
-from config import RUN_INTERVAL_DAYS, logger
+from config import RUN_INTERVAL_DAYS, IMDB_URLS, logger
 from imdb_scraper import scrape_imdb_top_movies
 from jellyseerr_client import JellyseerrClient
 from header import display_header
@@ -22,19 +22,39 @@ def main():
     
     while True:
         try:
-            print("\nScraping IMDb's Top Movies of the Week...")
-            top_movies = scrape_imdb_top_movies()
+            all_movies = set()
+            print(f"\nStarting scrape cycle for {len(IMDB_URLS)} list(s)...")
             
-            if not top_movies:
-                logger.error("No movies found from IMDb")
-                print("❌ No movies found.")
+            for idx, url in enumerate(IMDB_URLS, 1):
+                try:
+                    print(f"\n[{idx}/{len(IMDB_URLS)}] Scraping URL: {url}")
+                    movies = scrape_imdb_top_movies(url)
+                    
+                    if not movies:
+                        logger.warning(f"No movies found for URL: {url}")
+                        print(f"⚠️ No movies found for list {idx}.")
+                    else:
+                        logger.info(f"Scraped {len(movies)} movies from list {idx}")
+                        print(f"✅ Found {len(movies)} movies.")
+                        all_movies.update(movies)
+                        
+                except Exception as e:
+                    logger.error(f"Failed to scrape list {url}: {e}")
+                    print(f"❌ Failed to scrape list {url}: {e}")
+                    continue
+
+            unique_movies = sorted(list(all_movies))
+            
+            if not unique_movies:
+                logger.error("No movies found from any configured lists")
+                print("❌ No movies found from any lists.")
             else:
-                logger.info(f"Scraped {len(top_movies)} unique movies")
-                print(f"✅ Top Movies of the Week (Total: {len(top_movies)}):")
-                for i, movie in enumerate(top_movies, 1):
+                logger.info(f"Total unique movies to process: {len(unique_movies)}")
+                print(f"✅ Total Unique Movies (Total: {len(unique_movies)}):")
+                for i, movie in enumerate(unique_movies, 1):
                     print(f"{i}. {movie}")
 
-                process_movies(jellyseerr, top_movies)
+                process_movies(jellyseerr, unique_movies)
                 
         except Exception as e:
             logger.error(f"Unexpected error in main loop: {e}")
