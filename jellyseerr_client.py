@@ -121,6 +121,10 @@ class JellyseerrClient:
             normalized_title = normalize_title(title)
             normalized_original = normalize_title(original_title)
             
+            if DEBUG_MODE == 'VERBOSE':
+                logger.debug(f"Checking result - Type: {media_type}, Title: '{title}', Org: '{original_title}'")
+                logger.debug(f"Normalized Query: '{normalized_query_name}' vs Title: '{normalized_title}' vs Org: '{normalized_original}'")
+
             imdb_id = result.get("mediaInfo", {}).get("imdbId") or result.get("imdbId")
             media_id = result.get("id")
             tmdb_id = result.get("tmdbId", media_id)
@@ -229,7 +233,9 @@ class JellyseerrClient:
             # If list is empty, we'll try sending [1] as a fallback or just empty.
             payload["seasons"] = seasons
         
-        logger.debug(f"Making request for {media_type} (tmdbId: {tmdb_id}, mediaId: {media_id}), payload: {json.dumps(payload)}")
+        logger.debug(f"Making request for {media_type} (tmdbId: {tmdb_id}, mediaId: {media_id})")
+        logger.debug(f"API URL: {self.base_url}/api/v1/request")
+        logger.debug(f"Payload: {json.dumps(payload, indent=2)}")
         
         try:
             with create_session_with_retries() as session:
@@ -245,7 +251,8 @@ class JellyseerrClient:
                     print(f"✅ Requested {media_type} (tmdbId: {tmdb_id}, mediaId: {media_id})")
                     return True, res.text
                 else:
-                    logger.info(f"Request skipped for mediaId {media_id}: {res.text}")
+                    logger.info(f"Request skipped for mediaId {media_id}. Status: {res.status_code}")
+                    logger.debug(f"Response body: {res.text}")
                     print(f"ℹ️ Request skipped for mediaId {media_id}: {res.text}")
                     return False, res.text
                     
