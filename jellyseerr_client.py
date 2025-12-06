@@ -105,7 +105,7 @@ class JellyseerrClient:
         logger.debug(f"Processing {len(results)} results for '{media_name}'")
         
         # Helper to check a single result
-        def check_result(result):
+        def check_result(result, preferred_check=False):
             media_type = result.get("mediaType")
             if media_type not in ["movie", "tv"]:
                 return None
@@ -134,13 +134,16 @@ class JellyseerrClient:
                 print(f"✅ Found {media_type}: '{media_name}' (Matches: '{title}')")
                 return imdb_id, media_id, tmdb_id, media_type
             
+            if preferred_check and DEBUG_MODE == 'VERBOSE':
+                 logger.debug(f"Preferred check failed for '{media_name}' vs '{title}' (Org: {original_title}) [{media_type}]")
+            
             return None
 
         # 1. If preferred type is specified, try to find a match of that type first
         if preferred_media_type:
             for result in results:
                 if result.get("mediaType") == preferred_media_type:
-                    match = check_result(result)
+                    match = check_result(result, preferred_check=True)
                     if match:
                         return match
         
@@ -187,9 +190,36 @@ class JellyseerrClient:
         }
         
         if media_type == "tv":
-            # For TV shows, verify if we need to add specific parameters like 'seasons'
-            # Defaulting to basic request for now.
-            pass
+            # For TV shows, we MUST provide the 'seasons' array to avoid errors in some versions of Jellyseerr/Overseerr
+            # We'll fetch the show details to get the available seasons
+            logger.debug(f"Fetching TV details for {tmdb_id} to get season numbers...")
+            seasons = []
+            try:
+                with create_session_with_retries() as session:
+                    # Fetch TV details from Jellyseerr to get seasons
+                    tv_res = session.get(
+                        f"{self.base_url}/api/v1/tv/{tmdb_id}", 
+                        headers=self.headers,
+                        timeout=(5, 15)
+                    )
+                    if tv_res.status_code == 200:
+                        tv_data = tv_res.json()
+                        # Extract season numbers (excluding season 0/specials if desired, but let's include all valid ones)
+                        # Usually we want seasons that have episodes.
+                        # jellyseerr returns 'seasons' list in the details
+                        tv_seasons = tv_data.get("seasons", [])
+                        seasons = [s.get("seasonNumber") for s in tv_seasons if s.get("seasonNumber") is not None and s.get("seasonNumber") > 0]
+                        logger.debug(f"Found seasons for TV show {tmdb_id}: {seasons}")
+                    else:
+                        logger.warning(f"Failed to fetch TV details for {tmdb_id}, defaulting to empty seasons list. Status: {tv_res.status_code}")
+            except Exception as e:
+                logger.error(f"Error fetching TV details: {e}")
+            
+            # If we couldn't get seasons, we send an empty list or [1]? 
+            # Sending empty list might mean "all" or "none". 
+            # Based on common issues, sending all available seasons is safest for a "request all" behavior.
+            # If list is empty, we'll try sending [1] as a fallback or just empty.
+            payload["seasons"] = seasons
         
         logger.debug(f"Making request for {media_type} (tmdbId: {tmdb_id}, mediaId: {media_id}), payload: {json.dumps(payload)}")
         
