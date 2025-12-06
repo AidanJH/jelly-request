@@ -81,13 +81,14 @@ class JellyseerrClient:
     # Alias for backward compatibility if needed, though we'll update calls
     search_movie = search_media
 
-    def get_media_details(self, media_name, json_data):
+    def get_media_details(self, media_name, json_data, preferred_media_type=None):
         """
         Extract media details (movie or tv) from Jellyseerr search response.
         
         Args:
             media_name (str): Original media name being searched
             json_data (dict): JSON response from Jellyseerr search
+            preferred_media_type (str, optional): "movie" or "tv" to prioritize
             
         Returns:
             tuple: (imdb_id, media_id, tmdb_id, media_type) or (None, None, None, None)
@@ -98,35 +99,72 @@ class JellyseerrClient:
             return None, None, None, None
             
         normalized_query_name = normalize_title(media_name)
+        results = json_data["results"]
         
-        for result in json_data["results"]:
+        # Debug logging for results
+        logger.debug(f"Processing {len(results)} results for '{media_name}'")
+        
+        # Helper to check a single result
+        def check_result(result):
             media_type = result.get("mediaType")
-            if media_type in ["movie", "tv"]:
-                # Movies have 'title', TV shows have 'name' (usually)
-                title = result.get("title") or result.get("name") or ""
+            if media_type not in ["movie", "tv"]:
+                return None
                 
-                # Decode HTML entities like &amp; to &
-                title = decode_html_entities(title)
-                normalized_title = normalize_title(title)
+            # Movies have 'title', TV shows have 'name'
+            title = result.get("title") or result.get("name") or ""
+            original_title = result.get("originalTitle") or result.get("originalName") or ""
+            
+            # Decode HTML entities
+            title = decode_html_entities(title)
+            original_title = decode_html_entities(original_title)
+            
+            normalized_title = normalize_title(title)
+            normalized_original = normalize_title(original_title)
+            
+            imdb_id = result.get("mediaInfo", {}).get("imdbId") or result.get("imdbId")
+            media_id = result.get("id")
+            tmdb_id = result.get("tmdbId", media_id)
+            
+            if not media_id or not title:
+                return None
                 
-                imdb_id = result.get("mediaInfo", {}).get("imdbId") or result.get("imdbId")
-                media_id = result.get("id")
-                tmdb_id = result.get("tmdbId", media_id)
+            # Check for match in title OR original title
+            if normalized_query_name in normalized_title or normalized_query_name in normalized_original:
+                logger.info(f"Found {media_type}: '{media_name}' matches '{title}' (Original: '{original_title}')")
+                print(f"✅ Found {media_type}: '{media_name}' (Matches: '{title}')")
+                return imdb_id, media_id, tmdb_id, media_type
+            
+            return None
+
+        # 1. If preferred type is specified, try to find a match of that type first
+        if preferred_media_type:
+            for result in results:
+                if result.get("mediaType") == preferred_media_type:
+                    match = check_result(result)
+                    if match:
+                        return match
+        
+        # 2. If no match found yet (or no preference), check all results
+        for result in results:
+            # Skip if we already checked it (optimization: check if type matches preferred)
+            if preferred_media_type and result.get("mediaType") == preferred_media_type:
+                continue
                 
-                if not media_id or not title:
-                    logger.warning(f"Skipping result for '{title}' (missing mediaId or title)")
-                    print(f"❌ Skipping '{title}' (missing mediaId or title)")
-                    continue
-                    
-                logger.debug(f"Found {media_type}: {title} (tmdbId: {tmdb_id}, imdbId: {imdb_id}, mediaId: {media_id})")
-                
-                if normalized_query_name in normalized_title:
-                    logger.info(f"Found {media_type}: '{media_name}' (imdbId: {imdb_id}, mediaId: {media_id}, tmdbId: {tmdb_id})")
-                    print(f"✅ Found {media_type}: '{media_name}' (imdbId: {imdb_id}, mediaId: {media_id}, tmdbId: {tmdb_id})")
-                    return imdb_id, media_id, tmdb_id, media_type
+            match = check_result(result)
+            if match:
+                return match
                     
         logger.warning(f"No matching media found in Jellyseerr for '{media_name}'")
         print(f"❌ No matching media found in Jellyseerr for '{media_name}'")
+        
+        # Debug: Print available titles in results to help user trace
+        print(f"   🔎 Checked {len(results)} results in Jellyseerr:")
+        for i, res in enumerate(results[:5]): # Print top 5
+            m_type = res.get("mediaType")
+            t = res.get("title") or res.get("name") or "N/A"
+            ot = res.get("originalTitle") or res.get("originalName") or "N/A"
+            print(f"      {i+1}. [{m_type}] {t} (Org: {ot})")
+            
         return None, None, None, None
     
     def make_request(self, tmdb_id, media_id, media_type="movie"):

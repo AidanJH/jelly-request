@@ -23,43 +23,60 @@ def main():
     
     while True:
         try:
-            all_movies = set()
+            # Use a dictionary to store movies with their preferred type
+            # Key: Title, Value: {title: str, type: str}
+            all_media = {}
+            
             print(f"\nStarting scrape cycle for {len(IMDB_URLS)} list(s)...")
             
             for idx, url in enumerate(IMDB_URLS, 1):
                 try:
                     print(f"\n[{idx}/{len(IMDB_URLS)}] Scraping URL: {url}")
                     
+                    # Determine preferred type based on URL
+                    preferred_type = None
                     if "myanimelist.net" in url:
                         movies = scrape_mal_season(url)
+                        preferred_type = "tv" # MAL is mostly anime series
                     else:
                         movies = scrape_imdb_top_movies(url)
+                        preferred_type = "movie" # IMDb lists are usually movies
                     
                     if not movies:
                         logger.warning(f"No movies found for URL: {url}")
                         print(f"⚠️ No movies found for list {idx}.")
                     else:
-                        logger.info(f"Scraped {len(movies)} movies from list {idx}")
-                        print(f"✅ Found {len(movies)} movies.")
-                        all_movies.update(movies)
+                        logger.info(f"Scraped {len(movies)} items from list {idx} (Type hint: {preferred_type})")
+                        print(f"✅ Found {len(movies)} items.")
+                        
+                        for movie in movies:
+                            # Store in dictionary to dedup by title, but keep the preferred type
+                            # If it already exists, we keep the existing one (first come first served)
+                            # or maybe we should prefer 'tv' if both exist? For now, simple dedup.
+                            if movie not in all_media:
+                                all_media[movie] = {
+                                    "title": movie,
+                                    "type": preferred_type
+                                }
                         
                 except Exception as e:
                     logger.error(f"Failed to scrape list {url}: {e}")
                     print(f"❌ Failed to scrape list {url}: {e}")
                     continue
 
-            unique_movies = sorted(list(all_movies))
+            unique_media_list = sorted(all_media.values(), key=lambda x: x["title"])
             
-            if not unique_movies:
+            if not unique_media_list:
                 logger.error("No movies found from any configured lists")
                 print("❌ No movies found from any lists.")
             else:
-                logger.info(f"Total unique movies to process: {len(unique_movies)}")
-                print(f"✅ Total Unique Movies (Total: {len(unique_movies)}):")
-                for i, movie in enumerate(unique_movies, 1):
-                    print(f"{i}. {movie}")
-
-                process_movies(jellyseerr, unique_movies)
+                logger.info(f"Total unique items to process: {len(unique_media_list)}")
+                print(f"✅ Total Unique Items (Total: {len(unique_media_list)}):")
+                for i, item in enumerate(unique_media_list, 1):
+                    type_str = f" [{item['type'].upper()}]" if item['type'] else ""
+                    print(f"{i}. {item['title']}{type_str}")
+                
+                process_movies(jellyseerr, unique_media_list)
                 
         except Exception as e:
             logger.error(f"Unexpected error in main loop: {e}")
@@ -69,17 +86,17 @@ def main():
             print(f"ℹ️ Completed run, sleeping for {RUN_INTERVAL_DAYS} day(s)")
             time.sleep(RUN_INTERVAL_DAYS * 24 * 60 * 60)  # Sleep for specified days
 
-def process_movies(jellyseerr_client, movies):
+def process_movies(jellyseerr_client, media_items):
     """
-    Process a list of movies through Jellyseerr with enhanced duplicate prevention.
+    Process a list of media items through Jellyseerr with enhanced duplicate prevention.
     
     Args:
         jellyseerr_client (JellyseerrClient): Initialized Jellyseerr client
-        movies (list): List of movie titles to process
+        media_items (list): List of dicts {"title": str, "type": str}
     """
     # Initialize counters for summary
     stats = {
-        "total": len(movies),
+        "total": len(media_items),
         "new_requests": 0,
         "skipped_requested": 0,
         "skipped_available": 0,
@@ -93,20 +110,24 @@ def process_movies(jellyseerr_client, movies):
     # Fetch existing requests for duplicate prevention
     jellyseerr_client.get_existing_requests()
     
-    print("\nRequesting movies in Jellyseerr...")
+    print("\nRequesting media in Jellyseerr...")
     
-    for i, movie in enumerate(movies, 1):
-        print(f"\nProcessing '{movie}' ({i}/{len(movies)})...")
+    for i, item in enumerate(media_items, 1):
+        title = item["title"]
+        preferred_type = item["type"]
+        
+        print(f"\nProcessing '{title}' ({i}/{len(media_items)})...")
         try:
             # Search for the media in Jellyseerr
-            json_data = jellyseerr_client.search_media(movie)
+            json_data = jellyseerr_client.search_media(title)
             if not json_data:
                 stats["not_found"] += 1
                 print(f"❌ SKIPPED: Not found in Jellyseerr search results")
                 continue
                 
-            # Extract details from search results
-            imdb_id, media_id, tmdb_id, media_type = jellyseerr_client.get_media_details(movie, json_data)
+            # Extract details from search results with preferred type
+            imdb_id, media_id, tmdb_id, media_type = jellyseerr_client.get_media_details(title, json_data, preferred_type)
+            
             if not media_id:
                 stats["not_found"] += 1
                 print(f"❌ SKIPPED: Not found in Jellyseerr search results")
@@ -114,7 +135,7 @@ def process_movies(jellyseerr_client, movies):
             
             # Check if already requested or available
             should_skip, skip_reason, skip_details = jellyseerr_client.is_already_requested_or_available(
-                tmdb_id, media_type, imdb_id, movie
+                tmdb_id, media_type, imdb_id, title
             )
             
             if should_skip:
@@ -134,7 +155,7 @@ def process_movies(jellyseerr_client, movies):
                     stats["skipped_requested"] += 1  # Default to requested
                 
                 # Enhanced logging with detailed skip reason
-                _log_skip_reason(movie, skip_reason, skip_details)
+                _log_skip_reason(title, skip_reason, skip_details)
                 continue
             
             # Media is new - make the request
@@ -147,7 +168,7 @@ def process_movies(jellyseerr_client, movies):
             else:
                 stats["errors"] += 1
                 if "Request for this media already exists" not in msg:
-                    logger.error(f"Failed to request '{movie}': {msg}")
+                    logger.error(f"Failed to request '{title}': {msg}")
                     print(f"❌ FAILED: Could not request {media_type} - {msg}")
                 else:
                     # This is a race condition where media was requested between our check and request
@@ -156,7 +177,7 @@ def process_movies(jellyseerr_client, movies):
                 
         except Exception as e:
             stats["errors"] += 1
-            logger.error(f"Error processing movie '{movie}': {e}")
+            logger.error(f"Error processing '{title}': {e}")
             print(f"❌ ERROR: Processing failed - {e}")
             continue
     
