@@ -98,15 +98,15 @@ def process_movies(jellyseerr_client, movies):
     for i, movie in enumerate(movies, 1):
         print(f"\nProcessing '{movie}' ({i}/{len(movies)})...")
         try:
-            # Search for the movie in Jellyseerr
-            json_data = jellyseerr_client.search_movie(movie)
+            # Search for the media in Jellyseerr
+            json_data = jellyseerr_client.search_media(movie)
             if not json_data:
                 stats["not_found"] += 1
                 print(f"❌ SKIPPED: Not found in Jellyseerr search results")
                 continue
                 
-            # Extract movie details from search results
-            imdb_id, media_id, tmdb_id = jellyseerr_client.get_movie_details(movie, json_data)
+            # Extract details from search results
+            imdb_id, media_id, tmdb_id, media_type = jellyseerr_client.get_media_details(movie, json_data)
             if not media_id:
                 stats["not_found"] += 1
                 print(f"❌ SKIPPED: Not found in Jellyseerr search results")
@@ -114,7 +114,7 @@ def process_movies(jellyseerr_client, movies):
             
             # Check if already requested or available
             should_skip, skip_reason, skip_details = jellyseerr_client.is_already_requested_or_available(
-                tmdb_id, imdb_id, movie
+                tmdb_id, media_type, imdb_id, movie
             )
             
             if should_skip:
@@ -137,20 +137,20 @@ def process_movies(jellyseerr_client, movies):
                 _log_skip_reason(movie, skip_reason, skip_details)
                 continue
             
-            # Movie is new - make the request
-            print(f"🎬 REQUESTING: New movie not in system")
-            success, msg = jellyseerr_client.make_request(tmdb_id, media_id)
+            # Media is new - make the request
+            print(f"🎬 REQUESTING: New {media_type} not in system")
+            success, msg = jellyseerr_client.make_request(tmdb_id, media_id, media_type)
             
             if success:
                 stats["new_requests"] += 1
-                print(f"✅ SUCCESS: Movie requested - Status: PENDING")
+                print(f"✅ SUCCESS: {media_type.capitalize()} requested - Status: PENDING")
             else:
                 stats["errors"] += 1
                 if "Request for this media already exists" not in msg:
                     logger.error(f"Failed to request '{movie}': {msg}")
-                    print(f"❌ FAILED: Could not request movie - {msg}")
+                    print(f"❌ FAILED: Could not request {media_type} - {msg}")
                 else:
-                    # This is a race condition where movie was requested between our check and request
+                    # This is a race condition where media was requested between our check and request
                     stats["skipped_requested"] += 1
                     print(f"⏭️ SKIPPED: Request already exists (race condition)")
                 

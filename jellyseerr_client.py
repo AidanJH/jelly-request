@@ -22,25 +22,25 @@ class JellyseerrClient:
         self.existing_requests = []
         self.skip_list = {}
     
-    def search_movie(self, movie_name, max_retries=3):
+    def search_media(self, media_name, max_retries=3):
         """
-        Search for a movie in Jellyseerr.
+        Search for media (movie or tv) in Jellyseerr.
         
         Args:
-            movie_name (str): Name of the movie to search for
+            media_name (str): Name of the media to search for
             max_retries (int): Maximum number of retry attempts
             
         Returns:
             dict or None: JSON response from Jellyseerr API
         """
-        encoded_query = urllib.parse.quote(movie_name, safe='')
-        logger.debug(f"Searching Jellyseerr for '{movie_name}' with encoded query: {encoded_query}")
+        encoded_query = urllib.parse.quote(media_name, safe='')
+        logger.debug(f"Searching Jellyseerr for '{media_name}' with encoded query: {encoded_query}")
         start_time = datetime.now()
         
         for attempt in range(1, max_retries + 1):
             try:
                 with create_session_with_retries() as session:
-                    logger.debug(f"Attempt {attempt} for '{movie_name}': Sending request...")
+                    logger.debug(f"Attempt {attempt} for '{media_name}': Sending request...")
                     res = session.get(
                         f"{self.base_url}/api/v1/search", 
                         params={"query": encoded_query}, 
@@ -48,60 +48,67 @@ class JellyseerrClient:
                         timeout=(5, 15)
                     )
                     
-                    logger.debug(f"Attempt {attempt} for '{movie_name}': Response received with status {res.status_code}")
+                    logger.debug(f"Attempt {attempt} for '{media_name}': Response received with status {res.status_code}")
                     elapsed = (datetime.now() - start_time).total_seconds()
-                    logger.debug(f"Jellyseerr search for '{movie_name}' attempt {attempt} took {elapsed:.2f}s, headers: {res.headers}, response_size: {len(res.text)} bytes")
+                    logger.debug(f"Jellyseerr search for '{media_name}' attempt {attempt} took {elapsed:.2f}s, headers: {res.headers}, response_size: {len(res.text)} bytes")
                     
                     if res.status_code != 200:
-                        logger.error(f"Jellyseerr search failed for '{movie_name}' on attempt {attempt}: {res.text}")
-                        print(f"❌ Jellyseerr search failed for '{movie_name}': {res.text}")
+                        logger.error(f"Jellyseerr search failed for '{media_name}' on attempt {attempt}: {res.text}")
+                        print(f"❌ Jellyseerr search failed for '{media_name}': {res.text}")
                         if attempt == max_retries:
-                            logger.warning(f"Max retries reached for '{movie_name}', skipping")
-                            print(f"❌ Max retries reached for '{movie_name}', skipping")
+                            logger.warning(f"Max retries reached for '{media_name}', skipping")
+                            print(f"❌ Max retries reached for '{media_name}', skipping")
                             return None
                         continue
                     
-                    logger.debug(f"Jellyseerr full response for '{movie_name}': {res.text[:500]}")
+                    logger.debug(f"Jellyseerr full response for '{media_name}': {res.text[:500]}")
                     if DEBUG_MODE == 'VERBOSE':
-                        print(f"Jellyseerr response for '{movie_name}': {res.text[:500]}")
+                        print(f"Jellyseerr response for '{media_name}': {res.text[:500]}")
                     return res.json()
                     
             except Exception as e:
                 elapsed = (datetime.now() - start_time).total_seconds()
-                logger.error(f"Error querying Jellyseerr for '{movie_name}' on attempt {attempt} after {elapsed:.2f}s: {e}")
-                print(f"❌ Error querying Jellyseerr for '{movie_name}': {e}")
+                logger.error(f"Error querying Jellyseerr for '{media_name}' on attempt {attempt} after {elapsed:.2f}s: {e}")
+                print(f"❌ Error querying Jellyseerr for '{media_name}': {e}")
                 if attempt == max_retries:
-                    logger.warning(f"Max retries reached for '{movie_name}', skipping")
-                    print(f"❌ Max retries reached for '{movie_name}', skipping")
+                    logger.warning(f"Max retries reached for '{media_name}', skipping")
+                    print(f"❌ Max retries reached for '{media_name}', skipping")
                     return None
                 time.sleep(2 ** attempt)  # Exponential backoff
                 
         return None
     
-    def get_movie_details(self, movie_name, json_data):
+    # Alias for backward compatibility if needed, though we'll update calls
+    search_movie = search_media
+
+    def get_media_details(self, media_name, json_data):
         """
-        Extract movie details from Jellyseerr search response.
+        Extract media details (movie or tv) from Jellyseerr search response.
         
         Args:
-            movie_name (str): Original movie name being searched
+            media_name (str): Original media name being searched
             json_data (dict): JSON response from Jellyseerr search
             
         Returns:
-            tuple: (imdb_id, media_id, tmdb_id) or (None, None, None)
+            tuple: (imdb_id, media_id, tmdb_id, media_type) or (None, None, None, None)
         """
         if not json_data or "results" not in json_data:
-            logger.error(f"No results in Jellyseerr response for '{movie_name}'")
-            print(f"❌ No results in Jellyseerr response for '{movie_name}'")
-            return None, None, None
+            logger.error(f"No results in Jellyseerr response for '{media_name}'")
+            print(f"❌ No results in Jellyseerr response for '{media_name}'")
+            return None, None, None, None
             
-        normalized_movie_name = normalize_title(movie_name)
+        normalized_query_name = normalize_title(media_name)
         
         for result in json_data["results"]:
-            if result.get("mediaType") == "movie":
-                title = result.get("title", "")
+            media_type = result.get("mediaType")
+            if media_type in ["movie", "tv"]:
+                # Movies have 'title', TV shows have 'name' (usually)
+                title = result.get("title") or result.get("name") or ""
+                
                 # Decode HTML entities like &amp; to &
                 title = decode_html_entities(title)
                 normalized_title = normalize_title(title)
+                
                 imdb_id = result.get("mediaInfo", {}).get("imdbId") or result.get("imdbId")
                 media_id = result.get("id")
                 tmdb_id = result.get("tmdbId", media_id)
@@ -111,36 +118,42 @@ class JellyseerrClient:
                     print(f"❌ Skipping '{title}' (missing mediaId or title)")
                     continue
                     
-                logger.debug(f"Found movie: {title} (tmdbId: {tmdb_id}, imdbId: {imdb_id}, mediaId: {media_id})")
+                logger.debug(f"Found {media_type}: {title} (tmdbId: {tmdb_id}, imdbId: {imdb_id}, mediaId: {media_id})")
                 
-                if normalized_movie_name in normalized_title:
-                    logger.info(f"Found movie: '{movie_name}' (imdbId: {imdb_id}, mediaId: {media_id}, tmdbId: {tmdb_id})")
-                    print(f"✅ Found movie: '{movie_name}' (imdbId: {imdb_id}, mediaId: {media_id}, tmdbId: {tmdb_id})")
-                    return imdb_id, media_id, tmdb_id
+                if normalized_query_name in normalized_title:
+                    logger.info(f"Found {media_type}: '{media_name}' (imdbId: {imdb_id}, mediaId: {media_id}, tmdbId: {tmdb_id})")
+                    print(f"✅ Found {media_type}: '{media_name}' (imdbId: {imdb_id}, mediaId: {media_id}, tmdbId: {tmdb_id})")
+                    return imdb_id, media_id, tmdb_id, media_type
                     
-        logger.warning(f"No matching movie found in Jellyseerr for '{movie_name}'")
-        print(f"❌ No matching movie found in Jellyseerr for '{movie_name}'")
-        return None, None, None
+        logger.warning(f"No matching media found in Jellyseerr for '{media_name}'")
+        print(f"❌ No matching media found in Jellyseerr for '{media_name}'")
+        return None, None, None, None
     
-    def make_request(self, tmdb_id, media_id):
+    def make_request(self, tmdb_id, media_id, media_type="movie"):
         """
-        Make a request for a movie in Jellyseerr.
+        Make a request for media in Jellyseerr.
         
         Args:
-            tmdb_id (int): TMDB ID of the movie
+            tmdb_id (int): TMDB ID of the media
             media_id (int): Media ID from Jellyseerr
+            media_type (str): Type of media ("movie" or "tv")
             
         Returns:
             tuple: (success: bool, message: str)
         """
         payload = {
-            "mediaType": "movie",
+            "mediaType": media_type,
             "tmdbId": tmdb_id,
             "mediaId": media_id,
             "is4k": IS_4K_REQUEST
         }
         
-        logger.debug(f"Making request for tmdbId: {tmdb_id}, mediaId: {media_id}, payload: {json.dumps(payload)}")
+        if media_type == "tv":
+            # For TV shows, verify if we need to add specific parameters like 'seasons'
+            # Defaulting to basic request for now.
+            pass
+        
+        logger.debug(f"Making request for {media_type} (tmdbId: {tmdb_id}, mediaId: {media_id}), payload: {json.dumps(payload)}")
         
         try:
             with create_session_with_retries() as session:
@@ -152,8 +165,8 @@ class JellyseerrClient:
                 )
                 
                 if res.status_code == 201:
-                    logger.info(f"Successfully requested movie (tmdbId: {tmdb_id}, mediaId: {media_id})")
-                    print(f"✅ Requested movie (tmdbId: {tmdb_id}, mediaId: {media_id})")
+                    logger.info(f"Successfully requested {media_type} (tmdbId: {tmdb_id}, mediaId: {media_id})")
+                    print(f"✅ Requested {media_type} (tmdbId: {tmdb_id}, mediaId: {media_id})")
                     return True, res.text
                 else:
                     logger.info(f"Request skipped for mediaId {media_id}: {res.text}")
@@ -161,8 +174,8 @@ class JellyseerrClient:
                     return False, res.text
                     
         except Exception as e:
-            logger.error(f"Error requesting movie (tmdbId: {tmdb_id}, mediaId: {media_id}): {e}")
-            print(f"❌ Error requesting movie: {e}")
+            logger.error(f"Error requesting {media_type} (tmdbId: {tmdb_id}, mediaId: {media_id}): {e}")
+            print(f"❌ Error requesting {media_type}: {e}")
             return False, str(e)
 
     def get_existing_requests(self, max_retries=3):
@@ -235,18 +248,24 @@ class JellyseerrClient:
             imdb_id = media.get("imdbId")
             title = media.get("title", "Unknown")
             status = request.get("status", "unknown")
+            media_type = request.get("type") or media.get("mediaType") or "movie"
             
             # Only skip requests that are not failed or declined
             if status not in ["DECLINED", "FAILED", 3]:  # Status 3 = declined
                 if tmdb_id:
-                    self.skip_list[f"tmdb_{tmdb_id}"] = {
+                    # Typed key
+                    self.skip_list[f"tmdb_{media_type}_{tmdb_id}"] = {
                         "reason": f"Already requested (Status: {status})",
                         "request_id": request.get("id"),
                         "title": title,
                         "status": status,
                         "created": request.get("createdAt", ""),
-                        "is_4k": request.get("is4k", False)
+                        "is_4k": request.get("is4k", False),
+                        "media_type": media_type
                     }
+                    # Legacy key for fallback
+                    if media_type == "movie":
+                         self.skip_list[f"tmdb_{tmdb_id}"] = self.skip_list[f"tmdb_{media_type}_{tmdb_id}"]
                     skip_count += 1
                 
                 if imdb_id:
@@ -256,27 +275,31 @@ class JellyseerrClient:
                         "title": title,
                         "status": status,
                         "created": request.get("createdAt", ""),
-                        "is_4k": request.get("is4k", False)
+                        "is_4k": request.get("is4k", False),
+                        "media_type": media_type
                     }
         
-        print(f"✅ Skip list built: {skip_count} movies to skip (requested/available)")
-        logger.info(f"Built skip list with {skip_count} movies to prevent duplicates")
+        print(f"✅ Skip list built: {skip_count} items to skip (requested/available)")
+        logger.info(f"Built skip list with {skip_count} items to prevent duplicates")
     
-    def check_movie_availability(self, tmdb_id, max_retries=3):
+    def check_media_availability(self, tmdb_id, media_type="movie", max_retries=3):
         """
-        Check if a movie is already available in the library.
+        Check if media is already available in the library.
         
         Args:
-            tmdb_id (int): TMDB ID of the movie
+            tmdb_id (int): TMDB ID of the media
+            media_type (str): Type of media ("movie" or "tv")
             max_retries (int): Maximum number of retry attempts
             
         Returns:
             dict or None: Availability info or None if not available/error
         """
+        endpoint = "movie" if media_type == "movie" else "tv"
+        
         for attempt in range(1, max_retries + 1):
             try:
                 with create_session_with_retries() as session:
-                    url = f"{self.base_url}/api/v1/movie/{tmdb_id}"
+                    url = f"{self.base_url}/api/v1/{endpoint}/{tmdb_id}"
                     res = session.get(
                         url,
                         headers=self.headers,
@@ -288,41 +311,52 @@ class JellyseerrClient:
                         media_info = data.get("mediaInfo", {})
                         status = media_info.get("status")
                         
+                        # Check status. For TV shows, status might be different or partial?
+                        # Status 5 = Available. 4 = Part Available.
                         if status == 5:  # Status 5 = Available
                             return {
                                 "available": True,
                                 "status": "AVAILABLE",
-                                "title": data.get("title", "Unknown"),
+                                "title": data.get("title", "Unknown") if media_type == "movie" else data.get("name", "Unknown"),
                                 "added_date": media_info.get("createdAt", "")
                             }
                     
                     return None
                     
             except Exception as e:
-                logger.debug(f"Error checking availability for tmdbId {tmdb_id} on attempt {attempt}: {e}")
+                logger.debug(f"Error checking availability for {media_type} tmdbId {tmdb_id} on attempt {attempt}: {e}")
                 if attempt == max_retries:
                     return None
                 time.sleep(1)
         
         return None
     
-    def is_already_requested_or_available(self, tmdb_id, imdb_id=None, title=None):
+    def is_already_requested_or_available(self, tmdb_id, media_type="movie", imdb_id=None, title=None):
         """
-        Check if movie is already requested or available using multiple matching methods.
+        Check if media is already requested or available using multiple matching methods.
         
         Args:
-            tmdb_id (int): TMDB ID of the movie
-            imdb_id (str, optional): IMDb ID of the movie
-            title (str, optional): Title of the movie for logging
+            tmdb_id (int): TMDB ID of the media
+            media_type (str): "movie" or "tv"
+            imdb_id (str, optional): IMDb ID of the media
+            title (str, optional): Title of the media for logging
             
         Returns:
             tuple: (should_skip: bool, skip_reason: str, skip_details: dict)
         """
         # Method 1: Check skip list (existing requests) by TMDB ID
-        tmdb_key = f"tmdb_{tmdb_id}"
+        # Try typed key
+        tmdb_key = f"tmdb_{media_type}_{tmdb_id}"
         if tmdb_key in self.skip_list:
             details = self.skip_list[tmdb_key]
             return True, details["reason"], details
+            
+        # Try legacy key (only for movies to avoid false positives)
+        if media_type == "movie":
+            tmdb_key_legacy = f"tmdb_{tmdb_id}"
+            if tmdb_key_legacy in self.skip_list:
+                details = self.skip_list[tmdb_key_legacy]
+                return True, details["reason"], details
         
         # Method 2: Check skip list by IMDb ID (backup)
         if imdb_id and isinstance(imdb_id, str):
@@ -332,7 +366,7 @@ class JellyseerrClient:
                 return True, details["reason"], details
         
         # Method 3: Check if already available in library
-        availability = self.check_movie_availability(tmdb_id)
+        availability = self.check_media_availability(tmdb_id, media_type)
         if availability and availability.get("available"):
             return True, "Already available in library", {
                 "status": "AVAILABLE",
@@ -341,5 +375,5 @@ class JellyseerrClient:
                 "reason": "Already available in library (Status: AVAILABLE)"
             }
         
-        # Movie is not requested and not available - can be requested
-        return False, "New movie not in system", {}
+        # Media is not requested and not available - can be requested
+        return False, f"New {media_type} not in system", {}
