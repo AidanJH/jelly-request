@@ -129,9 +129,17 @@ class JellyseerrClient:
                 return None
                 
             # Check for match in title OR original title
+            # Use substring matching, but verify that at least the normalized query is "in" the target title
+            # For Japanese titles, sometimes the Romanji is slightly different.
             if normalized_query_name in normalized_title or normalized_query_name in normalized_original:
                 logger.info(f"Found {media_type}: '{media_name}' matches '{title}' (Original: '{original_title}')")
                 print(f"✅ Found {media_type}: '{media_name}' (Matches: '{title}')")
+                return imdb_id, media_id, tmdb_id, media_type
+            
+            # Reverse check: if the result title is inside the query name (sometimes query is longer or has extra info)
+            if normalized_title and len(normalized_title) > 5 and normalized_title in normalized_query_name:
+                logger.info(f"Found {media_type}: '{media_name}' matches '{title}' (Reverse match)")
+                print(f"✅ Found {media_type}: '{media_name}' (Reverse Match: '{title}')")
                 return imdb_id, media_id, tmdb_id, media_type
             
             if preferred_check and DEBUG_MODE == 'VERBOSE':
