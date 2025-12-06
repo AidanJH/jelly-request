@@ -34,7 +34,7 @@ class JellyseerrClient:
             dict or None: JSON response from Jellyseerr API
         """
         encoded_query = urllib.parse.quote(media_name, safe='')
-        logger.debug(f"Searching Jellyseerr for '{media_name}' with encoded query: {encoded_query}")
+        logger.info(f"Searching Jellyseerr for '{media_name}' with encoded query: {encoded_query}")
         start_time = datetime.now()
         
         for attempt in range(1, max_retries + 1):
@@ -61,7 +61,7 @@ class JellyseerrClient:
                             return None
                         continue
                     
-                    logger.debug(f"Jellyseerr full response for '{media_name}': {res.text[:500]}")
+                    logger.info(f"Jellyseerr full response for '{media_name}': {res.text[:500]}")
                     if DEBUG_MODE == 'VERBOSE':
                         print(f"Jellyseerr response for '{media_name}': {res.text[:500]}")
                     return res.json()
@@ -102,7 +102,7 @@ class JellyseerrClient:
         results = json_data["results"]
         
         # Debug logging for results
-        logger.debug(f"Processing {len(results)} results for '{media_name}'")
+        logger.info(f"Processing {len(results)} results for '{media_name}'")
         
         # Helper to check a single result
         def check_result(result, preferred_check=False):
@@ -121,9 +121,9 @@ class JellyseerrClient:
             normalized_title = normalize_title(title)
             normalized_original = normalize_title(original_title)
             
-            if DEBUG_MODE == 'VERBOSE':
-                logger.debug(f"Checking result - Type: {media_type}, Title: '{title}', Org: '{original_title}'")
-                logger.debug(f"Normalized Query: '{normalized_query_name}' vs Title: '{normalized_title}' vs Org: '{normalized_original}'")
+            if DEBUG_MODE == 'VERBOSE' or True: # Enforce logging
+                logger.info(f"Checking result - Type: {media_type}, Title: '{title}', Org: '{original_title}'")
+                logger.info(f"Normalized Query: '{normalized_query_name}' vs Title: '{normalized_title}' vs Org: '{normalized_original}'")
 
             imdb_id = result.get("mediaInfo", {}).get("imdbId") or result.get("imdbId")
             media_id = result.get("id")
@@ -146,8 +146,8 @@ class JellyseerrClient:
                 print(f"✅ Found {media_type}: '{media_name}' (Reverse Match: '{title}')")
                 return imdb_id, media_id, tmdb_id, media_type
             
-            if preferred_check and DEBUG_MODE == 'VERBOSE':
-                 logger.debug(f"Preferred check failed for '{media_name}' vs '{title}' (Org: {original_title}) [{media_type}]")
+            if preferred_check and (DEBUG_MODE == 'VERBOSE' or True): # Enforce logging
+                 logger.info(f"Preferred check failed for '{media_name}' vs '{title}' (Org: {original_title}) [{media_type}]")
             
             return None
 
@@ -233,9 +233,9 @@ class JellyseerrClient:
             # If list is empty, we'll try sending [1] as a fallback or just empty.
             payload["seasons"] = seasons
         
-        logger.debug(f"Making request for {media_type} (tmdbId: {tmdb_id}, mediaId: {media_id})")
-        logger.debug(f"API URL: {self.base_url}/api/v1/request")
-        logger.debug(f"Payload: {json.dumps(payload, indent=2)}")
+        logger.info(f"Making request for {media_type} (tmdbId: {tmdb_id}, mediaId: {media_id})")
+        logger.info(f"API URL: {self.base_url}/api/v1/request")
+        logger.info(f"Payload: {json.dumps(payload, indent=2)}")
         
         try:
             with create_session_with_retries() as session:
@@ -252,7 +252,7 @@ class JellyseerrClient:
                     return True, res.text
                 else:
                     logger.info(f"Request skipped for mediaId {media_id}. Status: {res.status_code}")
-                    logger.debug(f"Response body: {res.text}")
+                    logger.info(f"Response body: {res.text}")
                     print(f"ℹ️ Request skipped for mediaId {media_id}: {res.text}")
                     return False, res.text
                     
