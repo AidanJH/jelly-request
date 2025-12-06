@@ -81,6 +81,35 @@ class JellyseerrClient:
     # Alias for backward compatibility if needed, though we'll update calls
     search_movie = search_media
 
+    def get_full_media_details(self, media_id, media_type="movie"):
+        """
+        Fetch full media details from Jellyseerr including alternative titles/keywords.
+        
+        Args:
+            media_id (int): Media ID
+            media_type (str): "movie" or "tv"
+            
+        Returns:
+            dict or None: Full details JSON
+        """
+        endpoint = "movie" if media_type == "movie" else "tv"
+        try:
+            with create_session_with_retries() as session:
+                # Fetch details
+                res = session.get(
+                    f"{self.base_url}/api/v1/{endpoint}/{media_id}", 
+                    headers=self.headers,
+                    timeout=(5, 15)
+                )
+                if res.status_code == 200:
+                    return res.json()
+                else:
+                    logger.warning(f"Failed to fetch full details for {media_type} {media_id}: {res.status_code}")
+                    return None
+        except Exception as e:
+            logger.error(f"Error fetching full details for {media_type} {media_id}: {e}")
+            return None
+
     def get_media_details(self, media_name, json_data, preferred_media_type=None):
         """
         Extract media details (movie or tv) from Jellyseerr search response.
@@ -105,7 +134,7 @@ class JellyseerrClient:
         logger.info(f"Processing {len(results)} results for '{media_name}'")
         
         # Helper to check a single result
-        def check_result(result, preferred_check=False):
+        def check_result(result, preferred_check=False, is_top_result=False):
             media_type = result.get("mediaType")
             if media_type not in ["movie", "tv"]:
                 return None
@@ -146,6 +175,33 @@ class JellyseerrClient:
                 print(f"✅ Found {media_type}: '{media_name}' (Reverse Match: '{title}')")
                 return imdb_id, media_id, tmdb_id, media_type
             
+            # DEEP CHECK: If this is the top result and we haven't matched yet, check aliases
+            if is_top_result:
+                logger.info(f"Top result failed basic match, performing deep check for aliases on {media_id}...")
+                details = self.get_full_media_details(tmdb_id, media_type)
+                if details:
+                    # Check Keywords (often contain alternative titles or tags)
+                    keywords = details.get("keywords", [])
+                    for kw in keywords:
+                        kw_name = kw.get("name", "")
+                        if not kw_name: continue
+                        
+                        norm_kw = normalize_title(kw_name)
+                        if normalized_query_name in norm_kw:
+                            logger.info(f"Found {media_type}: '{media_name}' matches keyword '{kw_name}'")
+                            print(f"✅ Found {media_type}: '{media_name}' (Matches Keyword: '{kw_name}')")
+                            return imdb_id, media_id, tmdb_id, media_type
+                            
+                    # Check explicit alternative titles if available (e.g. from externalId lookups or if jellyseerr passes them)
+                    # Note: Jellyseerr API response structure for details usually mimics TMDB but 'alternativeTitles' might be nested differently
+                    # or not present. We check strictly top-level keys or 'keywords' for now.
+                    
+                    # Fallback: If we have 1 result total, and it's the correct media type, and we are fairly confident (e.g. length matches?)
+                    # Maybe just logging the deep check failure is enough for now to see what keys ARE available.
+                    if DEBUG_MODE == 'VERBOSE' or True:
+                        logger.info(f"Deep check keys available: {list(details.keys())}")
+                        # logger.info(f"Deep check keywords: {keywords}")
+
             if preferred_check and (DEBUG_MODE == 'VERBOSE' or True): # Enforce logging
                  logger.info(f"Preferred check failed for '{media_name}' vs '{title}' (Org: {original_title}) [{media_type}]")
             
@@ -153,19 +209,22 @@ class JellyseerrClient:
 
         # 1. If preferred type is specified, try to find a match of that type first
         if preferred_media_type:
-            for result in results:
+            for i, result in enumerate(results):
                 if result.get("mediaType") == preferred_media_type:
-                    match = check_result(result, preferred_check=True)
+                    # Treat the first preferred result as a "top result" candidate for deep checking
+                    is_top = (i == 0) 
+                    match = check_result(result, preferred_check=True, is_top_result=is_top)
                     if match:
                         return match
         
         # 2. If no match found yet (or no preference), check all results
-        for result in results:
+        for i, result in enumerate(results):
             # Skip if we already checked it (optimization: check if type matches preferred)
             if preferred_media_type and result.get("mediaType") == preferred_media_type:
                 continue
                 
-            match = check_result(result)
+            is_top = (i == 0)
+            match = check_result(result, is_top_result=is_top)
             if match:
                 return match
                     
