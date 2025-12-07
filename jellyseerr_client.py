@@ -196,8 +196,20 @@ class JellyseerrClient:
                     # Note: Jellyseerr API response structure for details usually mimics TMDB but 'alternativeTitles' might be nested differently
                     # or not present. We check strictly top-level keys or 'keywords' for now.
                     
-                    # Fallback: If we have 1 result total, and it's the correct media type, and we are fairly confident (e.g. length matches?)
-                    # Maybe just logging the deep check failure is enough for now to see what keys ARE available.
+                    # Fallback Heuristic for Anime:
+                    # If we are searching for a TV show, and the result is an Anime (Genre 16 or Original Lang 'ja'),
+                    # and it's the TOP result, we should probably trust it because standard Romaji -> English title mapping is inconsistent.
+                    is_anime = False
+                    if details.get("originalLanguage") == "ja":
+                        is_anime = True
+                    elif any(g.get("id") == 16 for g in details.get("genres", [])):
+                        is_anime = True
+                        
+                    if is_anime and media_type == "tv":
+                        logger.info(f"Anime Heuristic: Top result is an Anime (Lang: {details.get('originalLanguage')}), trusting result despite title mismatch.")
+                        print(f"✅ Found {media_type}: '{media_name}' (Anime Heuristic Match: '{title}')")
+                        return imdb_id, media_id, tmdb_id, media_type
+
                     if DEBUG_MODE == 'VERBOSE' or True:
                         logger.info(f"Deep check keys available: {list(details.keys())}")
                         # logger.info(f"Deep check keywords: {keywords}")
