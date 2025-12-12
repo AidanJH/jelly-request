@@ -15,15 +15,16 @@ API_KEY = os.environ.get('API_KEY', 'MTY3MzkzMTU4MjI1NzNmZWQ4OGQ1LWQ1NDMtNDY0OC1
 # IMDB_URL supports any IMDb list URL (Legacy support)
 _LEGACY_IMDB_URL = os.environ.get('IMDB_URL', 'https://www.imdb.com/chart/moviemeter')
 
-# LIST_URLS supports multiple IMDb list URLs
-# Can be a comma-separated string or a JSON array
-# Examples:
-# - "https://www.imdb.com/chart/moviemeter,https://www.imdb.com/chart/top"
-# - '["https://www.imdb.com/chart/moviemeter", "https://www.imdb.com/chart/top"]'
+# LIST_URLS supports multiple IMDb list URLs (Legacy/General support)
 LIST_URLS_ENV = os.environ.get('LIST_URLS', '')
 
-def parse_list_urls(env_urls, legacy_url):
-    """Parse LIST_URLS or fall back to IMDB_URL."""
+# Type-specific lists
+MOVIE_LISTS_ENV = os.environ.get('MOVIE_LISTS', '')
+TV_LISTS_ENV = os.environ.get('TV_LISTS', '')
+ANIME_LISTS_ENV = os.environ.get('ANIME_LISTS', '')
+
+def parse_list_urls(env_urls, legacy_url=None):
+    """Parse environment variable for lists (JSON or comma-separated)."""
     if env_urls:
         try:
             # Try parsing as JSON first
@@ -32,10 +33,14 @@ def parse_list_urls(env_urls, legacy_url):
             # Fallback to comma-separated
             return [url.strip() for url in env_urls.split(',') if url.strip()]
     
-    # Fallback to legacy IMDB_URL if LIST_URLS is not set
+    # Fallback to legacy URL if provided and env_urls is empty
     return [legacy_url] if legacy_url else []
 
+# Parse all list configurations
 IMDB_URLS = parse_list_urls(LIST_URLS_ENV, _LEGACY_IMDB_URL)
+MOVIE_LISTS = parse_list_urls(MOVIE_LISTS_ENV)
+TV_LISTS = parse_list_urls(TV_LISTS_ENV)
+ANIME_LISTS = parse_list_urls(ANIME_LISTS_ENV)
 
 MOVIE_LIMIT = int(os.environ.get('MOVIE_LIMIT', 50))
 RUN_INTERVAL_DAYS = int(os.environ.get('RUN_INTERVAL_DAYS', 7))

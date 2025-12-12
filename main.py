@@ -10,6 +10,96 @@ from mal_scraper import scrape_mal_season
 from jellyseerr_client import JellyseerrClient
 from header import display_header
 
+def aggregate_media(movie_lists, tv_lists, anime_lists, imdb_urls):
+    """
+    Aggregates media from various lists.
+    
+    Args:
+        movie_lists (list): URLs for movie lists
+        tv_lists (list): URLs for TV lists
+        anime_lists (list): URLs for anime lists
+        imdb_urls (list): Legacy/Mixed URLs
+        
+    Returns:
+        list: Sorted list of unique media items with types
+    """
+    # Use a dictionary to store movies with their preferred type
+    # Key: Title, Value: {title: str, type: str}
+    all_media = {}
+    
+    # Define list groups to process: (urls, forced_type, label)
+    list_groups = [
+        (movie_lists, "movie", "Movies"),
+        (tv_lists, "tv", "TV Shows"),
+        (anime_lists, "tv", "Anime"),
+        (imdb_urls, None, "Legacy/Mixed")
+    ]
+    
+    total_lists = sum(len(group[0]) for group in list_groups)
+    print(f"\\nStarting scrape cycle for {total_lists} configured list(s)...")
+    
+    list_count = 0
+    for urls, forced_type, label in list_groups:
+        if not urls:
+            continue
+            
+        print(f"\\n--- Processing {label} Lists ---")
+        
+        for url in urls:
+            list_count += 1
+            try:
+                print(f"\\n[{list_count}/{total_lists}] Scraping URL: {url}")
+                
+                # Determine scraper and default type based on URL
+                scraper_items = []
+                detected_type = None
+                
+                if "myanimelist.net" in url:
+                    scraper_items = scrape_mal_season(url)
+                    detected_type = "tv" # MAL is mostly anime series
+                else:
+                    scraper_items = scrape_imdb_top_movies(url)
+                    detected_type = "movie" # IMDb lists are usually movies
+                
+                # Use forced_type if specified (from config), otherwise use detected_type
+                final_type = forced_type if forced_type else detected_type
+                
+                if not scraper_items:
+                    logger.warning(f"No media found for URL: {url}")
+                    print(f"⚠️ No items found for list.")
+                else:
+                    logger.info(f"Scraped {len(scraper_items)} items from {label} list (Type: {final_type})")
+                    print(f"✅ Found {len(scraper_items)} items.")
+                    
+                    for item_title in scraper_items:
+                        # Store in dictionary to dedup by title
+                        # If we have a forced type, it overwrites any previous entry's type
+                        # or if it's new.
+                        if item_title not in all_media or forced_type:
+                            all_media[item_title] = {
+                                "title": item_title,
+                                "type": final_type
+                            }
+                    
+            except Exception as e:
+                logger.error(f"Failed to scrape list {url}: {e}")
+                print(f"❌ Failed to scrape list {url}: {e}")
+                continue
+
+    unique_media_list = sorted(all_media.values(), key=lambda x: x["title"])
+    
+    if not unique_media_list:
+        logger.error("No media found from any configured lists")
+        print("❌ No media found from any lists.")
+    else:
+        logger.info(f"Total unique items to process: {len(unique_media_list)}")
+        print(f"✅ Total Unique Items (Total: {len(unique_media_list)}):")
+        for i, item in enumerate(unique_media_list, 1):
+            type_str = f" [{item['type'].upper()}]" if item['type'] else ""
+            print(f"{i}. {item['title']}{type_str}")
+            
+    return unique_media_list
+
 def main():
     """Main application loop."""
     # Display application header
@@ -23,81 +113,9 @@ def main():
     
     while True:
         try:
-            # Use a dictionary to store movies with their preferred type
-            # Key: Title, Value: {title: str, type: str}
-            all_media = {}
+            unique_media_list = aggregate_media(MOVIE_LISTS, TV_LISTS, ANIME_LISTS, IMDB_URLS)
             
-            # Define list groups to process: (urls, forced_type, label)
-            list_groups = [
-                (MOVIE_LISTS, "movie", "Movies"),
-                (TV_LISTS, "tv", "TV Shows"),
-                (ANIME_LISTS, "tv", "Anime"),
-                (IMDB_URLS, None, "Legacy/Mixed")
-            ]
-            
-            total_lists = sum(len(group[0]) for group in list_groups)
-            print(f"\nStarting scrape cycle for {total_lists} configured list(s)...")
-            
-            list_count = 0
-            for urls, forced_type, label in list_groups:
-                if not urls:
-                    continue
-                    
-                print(f"\n--- Processing {label} Lists ---")
-                
-                for url in urls:
-                    list_count += 1
-                    try:
-                        print(f"\n[{list_count}/{total_lists}] Scraping URL: {url}")
-                        
-                        # Determine scraper and default type based on URL
-                        scraper_items = []
-                        detected_type = None
-                        
-                        if "myanimelist.net" in url:
-                            scraper_items = scrape_mal_season(url)
-                            detected_type = "tv" # MAL is mostly anime series
-                        else:
-                            scraper_items = scrape_imdb_top_movies(url)
-                            detected_type = "movie" # IMDb lists are usually movies
-                        
-                        # Use forced_type if specified (from config), otherwise use detected_type
-                        final_type = forced_type if forced_type else detected_type
-                        
-                        if not scraper_items:
-                            logger.warning(f"No media found for URL: {url}")
-                            print(f"⚠️ No items found for list.")
-                        else:
-                            logger.info(f"Scraped {len(scraper_items)} items from {label} list (Type: {final_type})")
-                            print(f"✅ Found {len(scraper_items)} items.")
-                            
-                            for item_title in scraper_items:
-                                # Store in dictionary to dedup by title
-                                # If we have a forced type, it overwrites any previous entry's type
-                                # or if it's new.
-                                if item_title not in all_media or forced_type:
-                                    all_media[item_title] = {
-                                        "title": item_title,
-                                        "type": final_type
-                                    }
-                            
-                    except Exception as e:
-                        logger.error(f"Failed to scrape list {url}: {e}")
-                        print(f"❌ Failed to scrape list {url}: {e}")
-                        continue
-
-            unique_media_list = sorted(all_media.values(), key=lambda x: x["title"])
-            
-            if not unique_media_list:
-                logger.error("No media found from any configured lists")
-                print("❌ No media found from any lists.")
-            else:
-                logger.info(f"Total unique items to process: {len(unique_media_list)}")
-                print(f"✅ Total Unique Items (Total: {len(unique_media_list)}):")
-                for i, item in enumerate(unique_media_list, 1):
-                    type_str = f" [{item['type'].upper()}]" if item['type'] else ""
-                    print(f"{i}. {item['title']}{type_str}")
-                
+            if unique_media_list:
                 process_movies(jellyseerr, unique_media_list)
                 
         except Exception as e:
