@@ -155,10 +155,17 @@ class JellyseerrClient:
                 logger.info(f"Normalized Query: '{normalized_query_name}' vs Title: '{normalized_title}' vs Org: '{normalized_original}'")
 
             imdb_id = result.get("mediaInfo", {}).get("imdbId") or result.get("imdbId")
-            media_id = result.get("id")
-            tmdb_id = result.get("tmdbId", media_id)
+            # Jellyseerr internal ID is ONLY in mediaInfo. 'id' is TMDB ID.
+            # If mediaInfo is missing, the item is not in Jellyseerr DB yet.
+            jellyseerr_id = result.get("mediaInfo", {}).get("id")
             
-            if not media_id or not title:
+            # TMDB ID is usually 'id' in search results
+            tmdb_id = result.get("id")
+            # Some results might have explicit tmdbId
+            if result.get("tmdbId"):
+                tmdb_id = result.get("tmdbId")
+            
+            if not tmdb_id or not title:
                 return None
                 
             # Check for match in title OR original title
@@ -167,17 +174,17 @@ class JellyseerrClient:
             if normalized_query_name in normalized_title or normalized_query_name in normalized_original:
                 logger.info(f"Found {media_type}: '{media_name}' matches '{title}' (Original: '{original_title}')")
                 print(f"✅ Found {media_type}: '{media_name}' (Matches: '{title}')")
-                return imdb_id, media_id, tmdb_id, media_type
+                return imdb_id, jellyseerr_id, tmdb_id, media_type
             
             # Reverse check: if the result title is inside the query name (sometimes query is longer or has extra info)
             if normalized_title and len(normalized_title) > 5 and normalized_title in normalized_query_name:
                 logger.info(f"Found {media_type}: '{media_name}' matches '{title}' (Reverse match)")
                 print(f"✅ Found {media_type}: '{media_name}' (Reverse Match: '{title}')")
-                return imdb_id, media_id, tmdb_id, media_type
+                return imdb_id, jellyseerr_id, tmdb_id, media_type
             
             # DEEP CHECK: If this is the top result and we haven't matched yet, check aliases
             if is_top_result:
-                logger.info(f"Top result failed basic match, performing deep check for aliases on {media_id}...")
+                logger.info(f"Top result failed basic match, performing deep check for aliases on {tmdb_id}...")
                 details = self.get_full_media_details(tmdb_id, media_type)
                 if details:
                     # Check Keywords (often contain alternative titles or tags)
@@ -190,12 +197,8 @@ class JellyseerrClient:
                         if normalized_query_name in norm_kw:
                             logger.info(f"Found {media_type}: '{media_name}' matches keyword '{kw_name}'")
                             print(f"✅ Found {media_type}: '{media_name}' (Matches Keyword: '{kw_name}')")
-                            return imdb_id, media_id, tmdb_id, media_type
+                            return imdb_id, jellyseerr_id, tmdb_id, media_type
                             
-                    # Check explicit alternative titles if available (e.g. from externalId lookups or if jellyseerr passes them)
-                    # Note: Jellyseerr API response structure for details usually mimics TMDB but 'alternativeTitles' might be nested differently
-                    # or not present. We check strictly top-level keys or 'keywords' for now.
-                    
                     # Fallback Heuristic for Anime:
                     # If we are searching for a TV show, and the result is an Anime (Genre 16 or Original Lang 'ja'),
                     # and it's the TOP result, we should probably trust it because standard Romaji -> English title mapping is inconsistent.
@@ -208,11 +211,15 @@ class JellyseerrClient:
                     if is_anime and media_type == "tv":
                         logger.info(f"Anime Heuristic: Top result is an Anime (Lang: {details.get('originalLanguage')}), trusting result despite title mismatch.")
                         print(f"✅ Found {media_type}: '{media_name}' (Anime Heuristic Match: '{title}')")
-                        return imdb_id, media_id, tmdb_id, media_type
+                        return imdb_id, jellyseerr_id, tmdb_id, media_type
 
                     if DEBUG_MODE == 'VERBOSE' or True:
                         logger.info(f"Deep check keys available: {list(details.keys())}")
-                        # logger.info(f"Deep check keywords: {keywords}")
+
+            if preferred_check and (DEBUG_MODE == 'VERBOSE' or True): # Enforce logging
+                 logger.info(f"Preferred check failed for '{media_name}' vs '{title}' (Org: {original_title}) [{media_type}]")
+            
+            return None
 
             if preferred_check and (DEBUG_MODE == 'VERBOSE' or True): # Enforce logging
                  logger.info(f"Preferred check failed for '{media_name}' vs '{title}' (Org: {original_title}) [{media_type}]")
@@ -253,13 +260,13 @@ class JellyseerrClient:
             
         return None, None, None, None
     
-    def make_request(self, tmdb_id, media_id, media_type="movie"):
+    def make_request(self, tmdb_id, media_id=None, media_type="movie"):
         """
         Make a request for media in Jellyseerr.
         
         Args:
             tmdb_id (int): TMDB ID of the media
-            media_id (int): Media ID from Jellyseerr
+            media_id (int, optional): Media ID from Jellyseerr (if exists)
             media_type (str): Type of media ("movie" or "tv")
             
         Returns:
@@ -268,9 +275,12 @@ class JellyseerrClient:
         payload = {
             "mediaType": media_type,
             "tmdbId": tmdb_id,
-            "mediaId": media_id,
             "is4k": IS_4K_REQUEST
         }
+        
+        # Only include mediaId if it's a valid internal ID (not None)
+        if media_id:
+            payload["mediaId"] = media_id
         
         if media_type == "tv":
             # For TV shows, we MUST provide the 'seasons' array to avoid errors in some versions of Jellyseerr/Overseerr

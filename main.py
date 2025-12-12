@@ -128,12 +128,14 @@ def process_movies(jellyseerr_client, media_items):
             # Extract details from search results with preferred type
             imdb_id, media_id, tmdb_id, media_type = jellyseerr_client.get_media_details(title, json_data, preferred_type)
             
-            if not media_id:
+            # Check if we have at least a TMDB ID. 'media_id' here is the internal Jellyseerr ID (nullable).
+            if not tmdb_id:
                 stats["not_found"] += 1
                 print(f"❌ SKIPPED: Not found in Jellyseerr search results")
                 continue
             
             # Check if already requested or available
+            # Note: We pass media_id if it exists, otherwise logic inside relies on TMDB ID checks
             should_skip, skip_reason, skip_details = jellyseerr_client.is_already_requested_or_available(
                 tmdb_id, media_type, imdb_id, title
             )
@@ -160,6 +162,7 @@ def process_movies(jellyseerr_client, media_items):
             
             # Media is new - make the request
             print(f"🎬 REQUESTING: New {media_type} not in system")
+            # Pass media_id (can be None) and tmdb_id
             success, msg = jellyseerr_client.make_request(tmdb_id, media_id, media_type)
             
             if success:
