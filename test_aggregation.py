@@ -104,6 +104,7 @@ class TestJellyseerrInteraction(unittest.TestCase):
         
         # Verify make_request was called with correct arguments
         # make_request(tmdb_id, media_id, media_type)
+        # Note: In updated client, we use tmdb_id as mediaId if media_id is None
         mock_client.make_request.assert_called_once_with(123, None, "movie")
         
         # Also verify the flow leading up to it

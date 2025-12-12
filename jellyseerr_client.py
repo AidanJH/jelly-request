@@ -276,7 +276,43 @@ class JellyseerrClient:
             "mediaType": media_type,
             "tmdbId": tmdb_id,
             "is4k": IS_4K_REQUEST,
-            "mediaId": media_id
+            # mediaId must be a number (validation). Use 0 if None to indicate new media.
+            # Jellyseerr uses findOne({ where: { tmdbId: requestBody.mediaId } }) for movies (bug in logic? line 122)
+            # OR findOne({ where: { tmdbId: requestBody.mediaId ... } }) (line 127)
+            # Actually, line 122/123 uses requestBody.mediaId to fetch from TMDB, which is wrong if mediaId is internal ID.
+            # But looking at line 125, it queries Media repo by tmdbId: requestBody.mediaId.
+            # WAIT: In MediaRequest.ts:
+            # tmdbMedia = await tmdb.getMovie({ movieId: requestBody.mediaId }) 
+            # This implies requestBody.mediaId is treated as TMDB ID in some places?
+            # NO, look at line 127: where: { tmdbId: requestBody.mediaId }
+            # It seems the payload 'mediaId' is expected to be the TMDB ID?!
+            # BUT earlier logs showed "mediaId" is separate from "tmdbId".
+            # Let's check requestInterfaces.ts again.
+            # mediaId: number; tmdbId?: number; ??
+            # Re-read MediaRequest.ts carefully.
+            
+            # Line 122: await tmdb.getMovie({ movieId: requestBody.mediaId })
+            # This STRONGLY suggests mediaId in the body is actually the TMDB ID.
+            # BUT we also have tmdbId in the body?
+            # Let's look at requestInterfaces.ts content from previous step.
+            # mediaId: number;
+            # tvdbId?: number;
+            # ...
+            # NO tmdbId in MediaRequestBody in the file I read!
+            
+            # Wait, I read requestInterfaces.ts content in step 20:
+            # export type MediaRequestBody = {
+            #   mediaType: MediaType;
+            #   mediaId: number;  <-- This IS the ID used for TMDB lookup!
+            #   tvdbId?: number;
+            #   ...
+            # };
+            
+            # THERE IS NO tmdbId in MediaRequestBody!
+            # My client code is sending: { mediaType, tmdbId, is4k, mediaId }
+            # The 'tmdbId' key is ignored. 'mediaId' IS the TMDB ID.
+            
+            "mediaId": int(tmdb_id)
         }
         
         if media_type == "tv":
@@ -327,6 +363,11 @@ class JellyseerrClient:
                 if res.status_code == 201:
                     logger.info(f"Successfully requested {media_type} (tmdbId: {tmdb_id}, mediaId: {media_id})")
                     print(f"✅ Requested {media_type} (tmdbId: {tmdb_id}, mediaId: {media_id})")
+                    return True, res.text
+                elif res.status_code == 202:
+                    # 202 Accepted usually means "No seasons available" which implies they are already requested/owned
+                    logger.info(f"Request accepted (likely already requested/owned) for {media_type} {tmdb_id}: {res.text}")
+                    print(f"✅ Requested {media_type} (Already handled/owned) - Status: 202")
                     return True, res.text
                 else:
                     logger.info(f"Request skipped for mediaId {media_id}. Status: {res.status_code}")
