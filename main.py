@@ -4,7 +4,7 @@ Orchestrates the IMDb scraping and Jellyseerr requesting process.
 """
 
 import time
-from config import RUN_INTERVAL_DAYS, IMDB_URLS, logger
+from config import RUN_INTERVAL_DAYS, IMDB_URLS, MOVIE_LISTS, TV_LISTS, ANIME_LISTS, logger
 from imdb_scraper import scrape_imdb_top_movies
 from mal_scraper import scrape_mal_season
 from jellyseerr_client import JellyseerrClient
@@ -27,48 +27,70 @@ def main():
             # Key: Title, Value: {title: str, type: str}
             all_media = {}
             
-            print(f"\nStarting scrape cycle for {len(IMDB_URLS)} list(s)...")
+            # Define list groups to process: (urls, forced_type, label)
+            list_groups = [
+                (MOVIE_LISTS, "movie", "Movies"),
+                (TV_LISTS, "tv", "TV Shows"),
+                (ANIME_LISTS, "tv", "Anime"),
+                (IMDB_URLS, None, "Legacy/Mixed")
+            ]
             
-            for idx, url in enumerate(IMDB_URLS, 1):
-                try:
-                    print(f"\n[{idx}/{len(IMDB_URLS)}] Scraping URL: {url}")
-                    
-                    # Determine preferred type based on URL
-                    preferred_type = None
-                    if "myanimelist.net" in url:
-                        movies = scrape_mal_season(url)
-                        preferred_type = "tv" # MAL is mostly anime series
-                    else:
-                        movies = scrape_imdb_top_movies(url)
-                        preferred_type = "movie" # IMDb lists are usually movies
-                    
-                    if not movies:
-                        logger.warning(f"No movies found for URL: {url}")
-                        print(f"⚠️ No movies found for list {idx}.")
-                    else:
-                        logger.info(f"Scraped {len(movies)} items from list {idx} (Type hint: {preferred_type})")
-                        print(f"✅ Found {len(movies)} items.")
-                        
-                        for movie in movies:
-                            # Store in dictionary to dedup by title, but keep the preferred type
-                            # If it already exists, we keep the existing one (first come first served)
-                            # or maybe we should prefer 'tv' if both exist? For now, simple dedup.
-                            if movie not in all_media:
-                                all_media[movie] = {
-                                    "title": movie,
-                                    "type": preferred_type
-                                }
-                        
-                except Exception as e:
-                    logger.error(f"Failed to scrape list {url}: {e}")
-                    print(f"❌ Failed to scrape list {url}: {e}")
+            total_lists = sum(len(group[0]) for group in list_groups)
+            print(f"\nStarting scrape cycle for {total_lists} configured list(s)...")
+            
+            list_count = 0
+            for urls, forced_type, label in list_groups:
+                if not urls:
                     continue
+                    
+                print(f"\n--- Processing {label} Lists ---")
+                
+                for url in urls:
+                    list_count += 1
+                    try:
+                        print(f"\n[{list_count}/{total_lists}] Scraping URL: {url}")
+                        
+                        # Determine scraper and default type based on URL
+                        scraper_items = []
+                        detected_type = None
+                        
+                        if "myanimelist.net" in url:
+                            scraper_items = scrape_mal_season(url)
+                            detected_type = "tv" # MAL is mostly anime series
+                        else:
+                            scraper_items = scrape_imdb_top_movies(url)
+                            detected_type = "movie" # IMDb lists are usually movies
+                        
+                        # Use forced_type if specified (from config), otherwise use detected_type
+                        final_type = forced_type if forced_type else detected_type
+                        
+                        if not scraper_items:
+                            logger.warning(f"No media found for URL: {url}")
+                            print(f"⚠️ No items found for list.")
+                        else:
+                            logger.info(f"Scraped {len(scraper_items)} items from {label} list (Type: {final_type})")
+                            print(f"✅ Found {len(scraper_items)} items.")
+                            
+                            for item_title in scraper_items:
+                                # Store in dictionary to dedup by title
+                                # If we have a forced type, it overwrites any previous entry's type
+                                # or if it's new.
+                                if item_title not in all_media or forced_type:
+                                    all_media[item_title] = {
+                                        "title": item_title,
+                                        "type": final_type
+                                    }
+                            
+                    except Exception as e:
+                        logger.error(f"Failed to scrape list {url}: {e}")
+                        print(f"❌ Failed to scrape list {url}: {e}")
+                        continue
 
             unique_media_list = sorted(all_media.values(), key=lambda x: x["title"])
             
             if not unique_media_list:
-                logger.error("No movies found from any configured lists")
-                print("❌ No movies found from any lists.")
+                logger.error("No media found from any configured lists")
+                print("❌ No media found from any lists.")
             else:
                 logger.info(f"Total unique items to process: {len(unique_media_list)}")
                 print(f"✅ Total Unique Items (Total: {len(unique_media_list)}):")
