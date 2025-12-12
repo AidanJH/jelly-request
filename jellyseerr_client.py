@@ -275,12 +275,9 @@ class JellyseerrClient:
         payload = {
             "mediaType": media_type,
             "tmdbId": tmdb_id,
-            "is4k": IS_4K_REQUEST
+            "is4k": IS_4K_REQUEST,
+            "mediaId": media_id
         }
-        
-        # Only include mediaId if it's a valid internal ID (not None)
-        if media_id:
-            payload["mediaId"] = media_id
         
         if media_type == "tv":
             # For TV shows, we MUST provide the 'seasons' array to avoid errors in some versions of Jellyseerr/Overseerr
