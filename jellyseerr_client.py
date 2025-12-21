@@ -316,36 +316,11 @@ class JellyseerrClient:
         }
         
         if media_type == "tv":
-            # For TV shows, we MUST provide the 'seasons' array to avoid errors in some versions of Jellyseerr/Overseerr
-            # We'll fetch the show details to get the available seasons
-            logger.debug(f"Fetching TV details for {tmdb_id} to get season numbers...")
-            seasons = []
-            try:
-                with create_session_with_retries() as session:
-                    # Fetch TV details from Jellyseerr to get seasons
-                    tv_res = session.get(
-                        f"{self.base_url}/api/v1/tv/{tmdb_id}", 
-                        headers=self.headers,
-                        timeout=(5, 15)
-                    )
-                    if tv_res.status_code == 200:
-                        tv_data = tv_res.json()
-                        # Extract season numbers (excluding season 0/specials if desired, but let's include all valid ones)
-                        # Usually we want seasons that have episodes.
-                        # jellyseerr returns 'seasons' list in the details
-                        tv_seasons = tv_data.get("seasons", [])
-                        seasons = [s.get("seasonNumber") for s in tv_seasons if s.get("seasonNumber") is not None and s.get("seasonNumber") > 0]
-                        logger.debug(f"Found seasons for TV show {tmdb_id}: {seasons}")
-                    else:
-                        logger.warning(f"Failed to fetch TV details for {tmdb_id}, defaulting to empty seasons list. Status: {tv_res.status_code}")
-            except Exception as e:
-                logger.error(f"Error fetching TV details: {e}")
-            
-            # If we couldn't get seasons, we send an empty list or [1]? 
-            # Sending empty list might mean "all" or "none". 
-            # Based on common issues, sending all available seasons is safest for a "request all" behavior.
-            # If list is empty, we'll try sending [1] as a fallback or just empty.
-            payload["seasons"] = seasons
+            # For TV shows, we use "all" to request all available seasons.
+            # This delegates the season lookup to the Jellyseerr server, which is more reliable
+            # than fetching details client-side and constructing the list manually.
+            # It ensures that all valid seasons (excluding specials usually) are requested.
+            payload["seasons"] = "all"
         
         logger.info(f"Making request for {media_type} (tmdbId: {tmdb_id}, mediaId: {media_id})")
         logger.info(f"API URL: {self.base_url}/api/v1/request")
