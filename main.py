@@ -9,6 +9,7 @@ from imdb_scraper import scrape_imdb_top_movies
 from mal_scraper import scrape_mal_season
 from jellyseerr_client import JellyseerrClient
 from header import display_header
+from utils import generate_search_candidates
 
 def aggregate_media(movie_lists, tv_lists, anime_lists, imdb_urls):
     """
@@ -158,15 +159,22 @@ def process_movies(jellyseerr_client, media_items):
         
         print(f"\nProcessing '{title}' ({i}/{len(media_items)})...")
         try:
-            # Search for the media in Jellyseerr
-            json_data = jellyseerr_client.search_media(title)
-            if not json_data:
-                stats["not_found"] += 1
-                print(f"❌ SKIPPED: Not found in Jellyseerr search results")
-                continue
-                
-            # Extract details from search results with preferred type
-            imdb_id, media_id, tmdb_id, media_type = jellyseerr_client.get_media_details(title, json_data, preferred_type)
+            # Search for the media in Jellyseerr. Try the original title first, then fall
+            # back to sequel/season-stripped variants (e.g. "Grand Blue Season 3" -> "Grand Blue"),
+            # since TMDB/Seerr index the base series rather than the suffixed seasonal title.
+            imdb_id = media_id = tmdb_id = media_type = None
+            for candidate in generate_search_candidates(title):
+                json_data = jellyseerr_client.search_media(candidate)
+                if not json_data:
+                    continue
+                imdb_id, media_id, tmdb_id, media_type = jellyseerr_client.get_media_details(
+                    candidate, json_data, preferred_type
+                )
+                if tmdb_id:
+                    if candidate != title:
+                        logger.info(f"Matched '{title}' via fallback query '{candidate}'")
+                        print(f"   ↪ Matched via fallback search: '{candidate}'")
+                    break
             
             # Check if we have at least a TMDB ID. 'media_id' here is the internal Jellyseerr ID (nullable).
             if not tmdb_id:

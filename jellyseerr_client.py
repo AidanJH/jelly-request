@@ -208,7 +208,7 @@ class JellyseerrClient:
                     elif any(g.get("id") == 16 for g in details.get("genres", [])):
                         is_anime = True
                         
-                    if is_anime and media_type == "tv":
+                    if is_anime:
                         logger.info(f"Anime Heuristic: Top result is an Anime (Lang: {details.get('originalLanguage')}), trusting result despite title mismatch.")
                         print(f"✅ Found {media_type}: '{media_name}' (Anime Heuristic Match: '{title}')")
                         return imdb_id, jellyseerr_id, tmdb_id, media_type
