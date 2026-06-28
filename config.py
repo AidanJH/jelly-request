@@ -45,7 +45,7 @@ ANIME_LISTS = parse_list_urls(ANIME_LISTS_ENV)
 MOVIE_LIMIT = int(os.environ.get('MOVIE_LIMIT', 50))
 RUN_INTERVAL_DAYS = int(os.environ.get('RUN_INTERVAL_DAYS', 7))
 DEBUG_MODE = os.environ.get('DEBUG_MODE', 'SIMPLE').upper()
-IS_4K_REQUEST = os.environ.get('IS_4K_REQUEST', 'true').lower() == 'true'
+IS_4K_REQUEST = os.environ.get('IS_4K_REQUEST', 'false').lower() == 'true'
 # Logging configuration
 # In Docker, we map /logs. Locally, we'll use a local logs directory if /logs isn't writable/existent
 if os.path.exists('/logs'):

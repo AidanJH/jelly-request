@@ -42,7 +42,7 @@ The application orchestrates a one-way sync from IMDb to Jellyseerr:
 | `MOVIE_LIMIT` | `50` | Max movies to scrape per run. |
 | `RUN_INTERVAL_DAYS` | `7` | Days to sleep between runs. |
 | `DEBUG_MODE` | `SIMPLE` | Set to `VERBOSE` for debug logs. |
-| `IS_4K_REQUEST` | `true` | Request 4K quality profile (`true`/`false`). |
+| `IS_4K_REQUEST` | `false` | Request 4K quality profile (`true`/`false`). Only enable if a dedicated 4K Sonarr/Radarr server is configured in Seerr. |
 
 ## Implementation Details
 
