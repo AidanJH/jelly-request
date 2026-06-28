@@ -46,6 +46,9 @@ MOVIE_LIMIT = int(os.environ.get('MOVIE_LIMIT', 50))
 RUN_INTERVAL_DAYS = int(os.environ.get('RUN_INTERVAL_DAYS', 7))
 DEBUG_MODE = os.environ.get('DEBUG_MODE', 'SIMPLE').upper()
 IS_4K_REQUEST = os.environ.get('IS_4K_REQUEST', 'false').lower() == 'true'
+# Delay (in seconds) to wait after each new request is made. This throttles how fast
+# Seerr fires auto-approval notifications (e.g. Discord webhooks), avoiding 429 rate limits.
+REQUEST_DELAY_SECONDS = float(os.environ.get('REQUEST_DELAY_SECONDS', 5))
 # Logging configuration
 # In Docker, we map /logs. Locally, we'll use a local logs directory if /logs isn't writable/existent
 if os.path.exists('/logs'):

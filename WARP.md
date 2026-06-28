@@ -43,6 +43,7 @@ The application orchestrates a one-way sync from IMDb to Jellyseerr:
 | `RUN_INTERVAL_DAYS` | `7` | Days to sleep between runs. |
 | `DEBUG_MODE` | `SIMPLE` | Set to `VERBOSE` for debug logs. |
 | `IS_4K_REQUEST` | `false` | Request 4K quality profile (`true`/`false`). Only enable if a dedicated 4K Sonarr/Radarr server is configured in Seerr. |
+| `REQUEST_DELAY_SECONDS` | `5` | Seconds to wait after each new request, throttling Seerr's auto-approval notifications (e.g. Discord) to avoid 429 rate limits. Increase if rate limits persist. |
 
 ## Implementation Details
 

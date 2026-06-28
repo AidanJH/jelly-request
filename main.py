@@ -4,7 +4,7 @@ Orchestrates the IMDb scraping and Jellyseerr requesting process.
 """
 
 import time
-from config import RUN_INTERVAL_DAYS, IMDB_URLS, MOVIE_LISTS, TV_LISTS, ANIME_LISTS, logger
+from config import RUN_INTERVAL_DAYS, IMDB_URLS, MOVIE_LISTS, TV_LISTS, ANIME_LISTS, REQUEST_DELAY_SECONDS, logger
 from imdb_scraper import scrape_imdb_top_movies
 from mal_scraper import scrape_mal_season
 from jellyseerr_client import JellyseerrClient
@@ -208,6 +208,11 @@ def process_movies(jellyseerr_client, media_items):
             if success:
                 stats["new_requests"] += 1
                 print(f"✅ SUCCESS: {media_type.capitalize()} requested - Status: PENDING")
+                # Throttle between new requests so Seerr doesn't fire auto-approval
+                # notifications faster than downstream services (e.g. Discord) allow.
+                if REQUEST_DELAY_SECONDS > 0:
+                    logger.debug(f"Waiting {REQUEST_DELAY_SECONDS}s before next request to avoid rate limits")
+                    time.sleep(REQUEST_DELAY_SECONDS)
             else:
                 stats["errors"] += 1
                 if "Request for this media already exists" not in msg:
